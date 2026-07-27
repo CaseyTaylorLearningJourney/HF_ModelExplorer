@@ -469,6 +469,29 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .fit-tight { color: var(--warn); }
         .fit-no { color: var(--danger); }
         .no-results { display: none; text-align: center; padding: 3rem; color: var(--muted); font-size: 1.05rem; }
+        .pager {
+            display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+            gap: 0.75rem; margin-top: 0.85rem; color: var(--muted); font-size: 0.88rem;
+        }
+        .pager-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+        .pager-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 2.1rem; height: 2.1rem; padding: 0 0.65rem;
+            background: transparent; border: 1px solid var(--border); border-radius: 8px;
+            color: var(--muted); font: inherit; font-size: 0.85rem; font-weight: 500; cursor: pointer;
+        }
+        .pager-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); background: var(--accent-glow); }
+        .pager-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .pager-btn.active { color: #93c5fd; border-color: var(--accent); background: var(--accent-glow); }
+        .pager-meta { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; }
+        .pager-size {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+        }
+        .pager-size select {
+            padding: 0.35rem 0.55rem; background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+            font: inherit; font-size: 0.85rem;
+        }
         @media (max-width: 720px) {
             .host-row, .hosts-header { grid-template-columns: 1fr 72px 78px 120px 36px; }
             h1 { font-size: 1.8rem; }
@@ -630,6 +653,21 @@ __TABLE_ROWS__
             </table>
             <div id="noResults" class="no-results">No matching models found.</div>
         </div>
+        <div class="pager" id="pager" hidden>
+            <div class="pager-size">
+                <label for="pageSizeSelect">Per page</label>
+                <select id="pageSizeSelect" aria-label="Results per page">
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                    <option value="150">150</option>
+                </select>
+            </div>
+            <div class="pager-controls">
+                <button type="button" class="pager-btn" id="pagePrev" aria-label="Previous page">Prev</button>
+                <span class="pager-meta" id="pageMeta">Page 1</span>
+                <button type="button" class="pager-btn" id="pageNext" aria-label="Next page">Next</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -727,7 +765,13 @@ __TABLE_ROWS__
         const dateWindowHint = document.getElementById('dateWindowHint');
         const btnGguf = document.getElementById('btnGguf');
         const btnMlx = document.getElementById('btnMlx');
+        const pager = document.getElementById('pager');
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+        const pagePrev = document.getElementById('pagePrev');
+        const pageNext = document.getElementById('pageNext');
+        const pageMeta = document.getElementById('pageMeta');
 
+        const PAGE_SIZE_OPTIONS = [50, 100, 150];
         let state = {
             format: 'gguf',
             hosts: DEFAULT_HOSTS.map(h => ({ ...h })),
@@ -735,7 +779,9 @@ __TABLE_ROWS__
             overheadPct: 20,
             context: 4096,
             kvBytes: 2,
-            link: '100gbe'
+            link: '100gbe',
+            pageSize: 50,
+            page: 1
         };
         let currentSortColumn = 4;
         let isAscending = false;
@@ -759,6 +805,8 @@ __TABLE_ROWS__
                 if (typeof saved.context === 'number') state.context = saved.context;
                 if (typeof saved.kvBytes === 'number') state.kvBytes = saved.kvBytes;
                 if (typeof saved.link === 'string' && LINKS[saved.link]) state.link = saved.link;
+                if (PAGE_SIZE_OPTIONS.includes(Number(saved.pageSize))) state.pageSize = Number(saved.pageSize);
+                if (typeof saved.page === 'number' && saved.page >= 1) state.page = Math.floor(saved.page);
             } catch (_) {}
         }
         function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -806,7 +854,7 @@ __TABLE_ROWS__
                 nameInput.value = host.name;
                 nameInput.addEventListener('input', () => {
                     state.hosts[index].name = nameInput.value;
-                    saveState(); updateDerivedReadouts(); applySearch();
+                    saveState(); updateDerivedReadouts(); applySearch(true);
                 });
 
                 const gbInput = document.createElement('input');
@@ -814,7 +862,7 @@ __TABLE_ROWS__
                 gbInput.placeholder = 'GB'; gbInput.value = host.gb;
                 gbInput.addEventListener('input', () => {
                     state.hosts[index].gb = Number(gbInput.value) || 0;
-                    saveState(); updateDerivedReadouts(); applySearch();
+                    saveState(); updateDerivedReadouts(); applySearch(true);
                 });
 
                 const usableInput = document.createElement('input');
@@ -825,7 +873,7 @@ __TABLE_ROWS__
                 usableInput.addEventListener('input', () => {
                     const v = Number(usableInput.value);
                     state.hosts[index].usable = v > 0 ? v : null;
-                    saveState(); updateDerivedReadouts(); applySearch();
+                    saveState(); updateDerivedReadouts(); applySearch(true);
                 });
 
                 const bwSelect = document.createElement('select');
@@ -863,7 +911,7 @@ __TABLE_ROWS__
                 removeBtn.addEventListener('click', () => {
                     if (state.hosts.length <= 1) return;
                     state.hosts.splice(index, 1);
-                    saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
+                    saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
                 });
 
                 row.append(nameInput, gbInput, usableInput, bwSelect, removeBtn);
@@ -893,7 +941,7 @@ __TABLE_ROWS__
             btnGguf.classList.toggle('active', format === 'gguf');
             btnMlx.classList.toggle('active', format === 'mlx');
             updateQuantAvailability();
-            saveState(); updateDerivedReadouts(); applySearch();
+            saveState(); updateDerivedReadouts(); applySearch(true);
         }
 
         function extractBits(modelId) {
@@ -1006,12 +1054,13 @@ __TABLE_ROWS__
 
         function getRows() { return Array.from(tableBody.getElementsByTagName('tr')); }
 
-        function applySearch() {
+        function applySearch(resetPage) {
+            if (resetPage) state.page = 1;
             const query = searchInput.value.toLowerCase().trim();
             const rows = getRows();
             const want = wantedBits();
             const { minB, maxB } = autoMapRange();
-            let visible = 0;
+            const matched = [];
 
             rows.forEach(row => {
                 const id = row.dataset.modelId || '';
@@ -1031,17 +1080,36 @@ __TABLE_ROWS__
                 const textOk = !query || id.includes(query) || sizeLabel.includes(query)
                     || (sizeB != null && String(sizeB).includes(query));
                 const show = quantOk && rangeOk && textOk && fit.rank > 0;
-                row.style.display = show ? '' : 'none';
 
                 const fitEl = row.querySelector('.fit-text');
                 if (fitEl) { fitEl.textContent = fit.label; fitEl.className = `fit-text ${fit.cls}`; }
                 const tpsEl = row.querySelector('.tps-text');
                 if (tpsEl) tpsEl.textContent = est ? `~${Math.round(est.tps)}` : '—';
-                if (show) visible++;
+
+                row.style.display = 'none';
+                if (show) matched.push(row);
             });
 
-            matchCount.textContent = `Showing ${visible} ${state.quant} models that fit`;
-            noResults.style.display = (rows.length === 0 || visible === 0) ? 'block' : 'none';
+            const total = matched.length;
+            const pageSize = state.pageSize;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1);
+            if (state.page > totalPages) state.page = totalPages;
+            if (state.page < 1) state.page = 1;
+            const start = (state.page - 1) * pageSize;
+            const end = Math.min(start + pageSize, total);
+            for (let i = start; i < end; i++) matched[i].style.display = '';
+
+            if (total === 0) {
+                matchCount.textContent = `Showing 0 ${state.quant} models that fit`;
+            } else {
+                matchCount.textContent =
+                    `Showing ${start + 1}–${end} of ${total} ${state.quant} models that fit`;
+            }
+            noResults.style.display = (rows.length === 0 || total === 0) ? 'block' : 'none';
+            pager.hidden = total === 0;
+            pageMeta.textContent = total === 0 ? 'Page 0 of 0' : `Page ${state.page} of ${totalPages}`;
+            pagePrev.disabled = state.page <= 1;
+            pageNext.disabled = state.page >= totalPages || total === 0;
             updateBoundReadout();
         }
 
@@ -1084,7 +1152,7 @@ __TABLE_ROWS__
             });
             tableBody.innerHTML = '';
             rowsArray.forEach(r => tableBody.appendChild(r));
-            applySearch();
+            applySearch(true);
         }
 
         function buildRow(rec) {
@@ -1181,7 +1249,7 @@ __TABLE_ROWS__
                 const arrow = document.getElementById('arrow' + i);
                 if (arrow) arrow.textContent = i === 4 ? ' ▼' : '';
             }
-            applySearch();
+            applySearch(true);
         }
 
         async function refreshModels(event) {
@@ -1221,19 +1289,19 @@ __TABLE_ROWS__
         btnGguf.addEventListener('click', () => setFormat('gguf'));
         btnMlx.addEventListener('click', () => setFormat('mlx'));
         quantSelect.addEventListener('change', () => {
-            state.quant = quantSelect.value; saveState(); updateDerivedReadouts(); applySearch();
+            state.quant = quantSelect.value; saveState(); updateDerivedReadouts(); applySearch(true);
         });
         overheadInput.addEventListener('input', () => {
             state.overheadPct = Number(overheadInput.value) || 0;
-            saveState(); updateDerivedReadouts(); applySearch();
+            saveState(); updateDerivedReadouts(); applySearch(true);
         });
         contextSelect.addEventListener('change', () => {
             state.context = Number(contextSelect.value) || 4096;
-            saveState(); applySearch();
+            saveState(); applySearch(true);
         });
         kvSelect.addEventListener('change', () => {
             state.kvBytes = Number(kvSelect.value) || 2;
-            saveState(); applySearch();
+            saveState(); applySearch(true);
         });
         linkSelect.addEventListener('change', () => {
             state.link = LINKS[linkSelect.value] ? linkSelect.value : '100gbe';
@@ -1241,21 +1309,38 @@ __TABLE_ROWS__
         });
         document.getElementById('addHostBtn').addEventListener('click', () => {
             state.hosts.push({ name: '', gb: 0, usable: null, bw: 400 });
-            saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
+            saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
         });
         document.getElementById('loadClusterBtn').addEventListener('click', () => {
             state.hosts = CLUSTER_PRESET.map(h => ({ ...h }));
-            saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
+            saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
         });
         document.getElementById('loadNvl72Btn').addEventListener('click', () => {
             state.hosts = NVL72_PRESET.map(h => ({ ...h }));
-            saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
+            saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
         });
         document.getElementById('resetHostsBtn').addEventListener('click', () => {
             state.hosts = DEFAULT_HOSTS.map(h => ({ ...h }));
-            saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
+            saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
         });
-        searchInput.addEventListener('input', applySearch);
+        searchInput.addEventListener('input', () => applySearch(true));
+        pageSizeSelect.addEventListener('change', () => {
+            state.pageSize = Number(pageSizeSelect.value) || 50;
+            state.page = 1;
+            saveState();
+            applySearch();
+        });
+        pagePrev.addEventListener('click', () => {
+            if (state.page <= 1) return;
+            state.page -= 1;
+            saveState();
+            applySearch();
+        });
+        pageNext.addEventListener('click', () => {
+            state.page += 1;
+            saveState();
+            applySearch();
+        });
         refreshBtn.addEventListener('click', refreshModels);
 
         loadState();
@@ -1263,6 +1348,7 @@ __TABLE_ROWS__
         contextSelect.value = String(state.context);
         kvSelect.value = String(state.kvBytes);
         linkSelect.value = state.link;
+        pageSizeSelect.value = String(state.pageSize);
         setFormat(state.format);
         renderHosts();
         updateDerivedReadouts();
