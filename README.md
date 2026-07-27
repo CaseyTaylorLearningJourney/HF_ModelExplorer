@@ -2,7 +2,7 @@
 
 Cluster-aware Hugging Face model finder for **GGUF** and **MLX**.
 
-HF’s hardware picker assumes a single machine. This tool maps multi-host RAM, memory bandwidth, and interconnect to models that fit, with theoretical decode tok/s.
+I found that HF’s hardware picker assumes just a single machine. This tool maps multi-host RAM, memory bandwidth, and interconnect to models that fit, with theoretical decode tok/s, so you can find your models easily. 
 
 **Live demo:** https://caseytaylorlearningjourney.github.io/HF_ModelExplorer/
 
@@ -18,7 +18,7 @@ Results: Fits / Tight / Won’t, plus est. tok/s (MoE uses active params). Snaps
 ## How estimates work
 
 Memory ≈ weights (effective bits) + KV(context) + overhead floor.  
-Usable GB blank = auto (Apple ~75% Metal cap, others 1 − overhead%). Set it explicitly if you raised `iogpu.wired_limit_mb` or a GTT carve-out.  
+Usable GB blank = auto (Apple ~75% Metal cap, others 1 − overhead%). Set it explicitly if you raised `iogpu.wired_limit_mb` or a GTT carve-ou for strix halo or GB10 models. 
 tok/s ≈ memory bandwidth / bytes read per token. Cluster decode is a sequential pipeline (stage times sum, plus per-hop transfer + latency). Numbers are theoretical ceilings — details live in the on-page formula hint.
 
 ## Local build
