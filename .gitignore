@@ -1,0 +1,7 @@
+_site/
+index.html
+data/
+__pycache__/
+.venv/
+*.pyc
+.DS_Store
