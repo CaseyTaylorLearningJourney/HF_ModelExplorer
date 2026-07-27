@@ -3,6 +3,10 @@ name: Rebuild and Deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "LICENSE"
+      - ".gitignore"
   schedule:
     - cron: "0 */2 * * *" # every other hour
   workflow_dispatch:
