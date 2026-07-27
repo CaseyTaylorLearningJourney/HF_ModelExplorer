@@ -300,6 +300,7 @@ def write_site(snapshots, bands, seed_records, min_b, max_b):
         .replace("__BYTES_PER_PARAM_JSON__", json.dumps(BYTES_PER_PARAM))
         .replace("__QUANT_BITS_JSON__", json.dumps(QUANT_BITS))
         .replace("__BAND_EDGES_JSON__", json.dumps(SIZE_BAND_EDGES))
+        .replace("__SEED_MAX_B__", str(SEED_MAX_B))
     )
     with open(os.path.join(site, "index.html"), "w", encoding="utf-8") as f:
         f.write(html)
@@ -375,10 +376,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .controls-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
         .hosts-list { display: flex; flex-direction: column; gap: 0.55rem; }
         .host-row {
-            display: grid; grid-template-columns: 1fr 80px 90px 130px 40px; gap: 0.5rem; align-items: center;
+            display: grid; grid-template-columns: 1fr 88px 96px 168px 40px; gap: 0.5rem; align-items: center;
         }
         .hosts-header {
-            display: grid; grid-template-columns: 1fr 80px 90px 130px 40px; gap: 0.5rem;
+            display: grid; grid-template-columns: 1fr 88px 96px 168px 40px; gap: 0.5rem;
             font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
             letter-spacing: 0.05em; padding: 0 0.2rem; margin-bottom: 0.4rem;
         }
@@ -469,7 +470,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .fit-no { color: var(--danger); }
         .no-results { display: none; text-align: center; padding: 3rem; color: var(--muted); font-size: 1.05rem; }
         @media (max-width: 720px) {
-            .host-row, .hosts-header { grid-template-columns: 1fr 70px 75px 100px 36px; }
+            .host-row, .hosts-header { grid-template-columns: 1fr 72px 78px 120px 36px; }
             h1 { font-size: 1.8rem; }
         }
     </style>
@@ -499,6 +500,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <div class="host-actions">
                 <button type="button" class="text-btn" id="addHostBtn">+ Add host</button>
                 <button type="button" class="text-btn" id="loadClusterBtn">Load example cluster</button>
+                <button type="button" class="text-btn" id="loadNvl72Btn">Load GB200 NVL72</button>
                 <button type="button" class="text-btn" id="resetHostsBtn">Reset to single host</button>
             </div>
         </div>
@@ -637,6 +639,7 @@ __TABLE_ROWS__
         const BYTES_PER_PARAM = __BYTES_PER_PARAM_JSON__;
         const QUANT_BITS = __QUANT_BITS_JSON__;
         const SIZE_BAND_EDGES = __BAND_EDGES_JSON__;
+        const SEED_MAX_B = __SEED_MAX_B__;
         const MIN_PARAMS_B = 0;
         const BW_PRESETS = [
             { label: '68 (M1)', gbps: 68 },
@@ -659,12 +662,20 @@ __TABLE_ROWS__
             { label: '936 (RTX 3090)', gbps: 936 },
             { label: '1008 (RTX 4090)', gbps: 1008 },
             { label: '1792 (RTX 5090)', gbps: 1792 },
+            { label: '2039 (A100 SXM)', gbps: 2039 },
+            { label: '3350 (H100 SXM)', gbps: 3350 },
+            { label: '4800 (H200)', gbps: 4800 },
+            { label: '8000 (B200)', gbps: 8000 },
             { label: 'Custom', gbps: 0 }
         ];
         const CLUSTER_PRESET = [
             { name: 'Node 1', gb: 128, usable: null, bw: 800 },
             { name: 'Node 2', gb: 64, usable: null, bw: 400 },
             { name: 'Node 3', gb: 24, usable: null, bw: 400 }
+        ];
+        // 72× B200 @ 192 GB = 13.824 TB HBM; single pool (NVLink domain), per-GPU BW ceiling.
+        const NVL72_PRESET = [
+            { name: 'GB200 NVL72', gb: 13824, usable: 13824, bw: 8000 }
         ];
         const DEFAULT_HOSTS = [{ name: 'My machine', gb: 16, usable: null, bw: 400 }];
 
@@ -1096,13 +1107,12 @@ __TABLE_ROWS__
 
         function sizeBands(maxB) {
             const bands = [];
+            const cap = Math.min(maxB, SEED_MAX_B);
             for (let i = 0; i < SIZE_BAND_EDGES.length - 1; i++) {
                 const lo = SIZE_BAND_EDGES[i];
-                if (lo >= maxB) break;
-                bands.push([lo, Math.min(SIZE_BAND_EDGES[i + 1], maxB)]);
+                if (lo >= cap) break;
+                bands.push([lo, Math.min(SIZE_BAND_EDGES[i + 1], cap)]);
             }
-            const last = SIZE_BAND_EDGES[SIZE_BAND_EDGES.length - 1];
-            if (maxB > last) bands.push([last, maxB]);
             return bands;
         }
 
@@ -1124,11 +1134,13 @@ __TABLE_ROWS__
         }
 
         async function loadSnapshots(force, onProgress) {
-            const { maxB } = autoMapRange();
-            const bands = sizeBands(Math.max(maxB, 2000));
+            // Always load the full published catalog (SEED_MAX_B). Fit filtering still
+            // uses autoMapRange — large clusters (e.g. NVL72 @ 13.8 TB) must not request
+            // overflow bands that the crawl never wrote.
+            const bands = sizeBands(SEED_MAX_B);
             const cache = readCache();
             const now = Date.now();
-            let done = 0, fetched = 0;
+            let done = 0, fetched = 0, missing = 0;
             const report = () => onProgress && onProgress(done, bands.length, fetched);
 
             const parts = await Promise.all(bands.map(async ([a, b]) => {
@@ -1146,13 +1158,18 @@ __TABLE_ROWS__
                 } catch (err) {
                     done++; report();
                     if (hit && Array.isArray(hit.records)) return hit.records;
-                    throw err;
+                    missing++;
+                    console.warn(err);
+                    return [];
                 }
             }));
             writeCache(cache);
+            if (missing && missing === bands.length) {
+                throw new Error('All snapshot bands unavailable');
+            }
             const byId = new Map();
             for (const part of parts) for (const rec of part) byId.set(rec.id, rec);
-            return { records: Array.from(byId.values()), fetched };
+            return { records: Array.from(byId.values()), fetched, missing };
         }
 
         function renderRecords(records) {
@@ -1174,7 +1191,7 @@ __TABLE_ROWS__
             refreshStatus.style.color = 'var(--muted)';
             refreshStatus.textContent = force ? 'Reloading snapshots…' : 'Refreshing…';
             try {
-                const { records, fetched } = await loadSnapshots(force, (done, total) => {
+                const { records, fetched, missing } = await loadSnapshots(force, (done, total) => {
                     refreshStatus.textContent = `Bands ${done}/${total}…`;
                 });
                 renderRecords(records);
@@ -1185,7 +1202,12 @@ __TABLE_ROWS__
                         dateWindowHint.textContent = `Snapshot: ${meta.generated_at} · last 365 days of models`;
                     }
                 } catch (_) {}
-                refreshStatus.textContent = fetched ? '' : 'All bands from cache — Shift-click to force';
+                if (missing) {
+                    refreshStatus.textContent = `Loaded with ${missing} band(s) missing`;
+                    refreshStatus.style.color = 'var(--warn)';
+                } else {
+                    refreshStatus.textContent = fetched ? '' : 'All bands from cache — Shift-click to force';
+                }
             } catch (err) {
                 console.error(err);
                 refreshStatus.textContent = 'Snapshot unavailable — keeping previous results';
@@ -1223,6 +1245,10 @@ __TABLE_ROWS__
         });
         document.getElementById('loadClusterBtn').addEventListener('click', () => {
             state.hosts = CLUSTER_PRESET.map(h => ({ ...h }));
+            saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
+        });
+        document.getElementById('loadNvl72Btn').addEventListener('click', () => {
+            state.hosts = NVL72_PRESET.map(h => ({ ...h }));
             saveState(); renderHosts(); updateDerivedReadouts(); applySearch();
         });
         document.getElementById('resetHostsBtn').addEventListener('click', () => {

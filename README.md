@@ -8,7 +8,7 @@ I found that HF’s hardware picker assumes just a single machine. This tool map
 
 ## What you dial in
 
-- **Hosts** — RAM, optional usable-GB override, mem bandwidth presets (Apple M1–M5 base/Pro/Max, Ultras where they exist, Strix Halo, RTX 3090/4090/5090, or Custom)
+- **Hosts** — RAM, optional usable-GB override, mem bandwidth presets (Apple M1–M5 base/Pro/Max, Ultras where they exist, Strix Halo, RTX 3090/4090/5090, A100/H100/H200/B200 up to 8 TB/s, or Custom). Includes a GB200 NVL72 preset (72×192 GB = 13.824 TB).
 - **Quant** — effective-bits table (IQ4_XS, Q4_K_M, Q5_K_M, Q6_K, Q8_0, MXFP4, FP8, BF16, MLX 4–8 bit)
 - **Context** — 4k through 1M · KV dtype FP16/FP8
 - **Interconnect** — USB4/TB4 through 800GbE · shows compute vs network bound
