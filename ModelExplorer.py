@@ -252,12 +252,12 @@ def build_rows(records):
         size_label = format_size_label(rec["sizeB"])
         rows.append(
             f"""                    <tr data-model-id="{rec['id'].lower()}"{bits_attr}{size_attr}{active_attr}>
-                        <td><a class="model-link" href="https://huggingface.co/{rec['id']}" target="_blank" rel="noopener">{rec['id']}</a></td>
-                        <td style="text-align: right;"><span class="size-text">{size_label}</span></td>
-                        <td style="text-align: right;"><span class="fit-text">—</span></td>
-                        <td style="text-align: right;"><span class="tps-text">—</span></td>
-                        <td style="text-align: right;"><span class="badge-downloads {high}">{rec['downloads']:,}</span></td>
-                        <td style="text-align: right;"><span class="date-text">{rec['date']}</span></td>
+                        <td data-label="Model"><a class="model-link" href="https://huggingface.co/{rec['id']}" target="_blank" rel="noopener">{rec['id']}</a></td>
+                        <td data-label="Size" style="text-align: right;"><span class="size-text">{size_label}</span></td>
+                        <td data-label="Fit" style="text-align: right;"><span class="fit-text">—</span></td>
+                        <td data-label="Est. tok/s" style="text-align: right;"><span class="tps-text">—</span></td>
+                        <td data-label="Downloads" style="text-align: right;"><span class="badge-downloads {high}">{rec['downloads']:,}</span></td>
+                        <td data-label="Last Modified" style="text-align: right;"><span class="date-text">{rec['date']}</span></td>
                     </tr>"""
         )
     return "\n".join(rows)
@@ -376,8 +376,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .controls-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
         .hosts-list { display: flex; flex-direction: column; gap: 0.55rem; }
         .host-row {
-            display: grid; grid-template-columns: 1fr 88px 96px 168px 40px; gap: 0.5rem; align-items: center;
+            display: grid; grid-template-columns: 1fr 88px 96px 168px 40px; gap: 0.5rem; align-items: end;
         }
+        .host-field { min-width: 0; }
+        .host-field label {
+            display: none; font-size: 0.72rem; color: var(--muted); margin-bottom: 0.3rem;
+            font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .host-remove { display: flex; align-items: flex-end; justify-content: flex-end; }
         .hosts-header {
             display: grid; grid-template-columns: 1fr 88px 96px 168px 40px; gap: 0.5rem;
             font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
@@ -492,9 +498,73 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             border: 1px solid var(--border); border-radius: 8px; color: var(--text);
             font: inherit; font-size: 0.85rem;
         }
+        @media (max-width: 900px) {
+            .host-row, .hosts-header { grid-template-columns: 1fr 80px 88px 148px 36px; }
+        }
         @media (max-width: 720px) {
-            .host-row, .hosts-header { grid-template-columns: 1fr 72px 78px 120px 36px; }
-            h1 { font-size: 1.8rem; }
+            body { padding: 1.1rem 0.85rem 2.25rem; }
+            h1 { font-size: 1.7rem; }
+            .subtitle { font-size: 0.92rem; line-height: 1.4; }
+            .panel { padding: 0.95rem 0.9rem; border-radius: 12px; }
+            .controls-row { flex-direction: column; align-items: stretch; gap: 0.65rem; }
+            .format-toggle { width: 100%; }
+            .format-toggle button { flex: 1; padding: 0.65rem 0.75rem; }
+            .hosts-header { display: none; }
+            .host-row {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.65rem;
+                padding: 0.85rem;
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                background: rgba(15, 23, 42, 0.35);
+                align-items: stretch;
+            }
+            .host-field label { display: block; }
+            .host-field-name, .host-field-bw { grid-column: 1 / -1; }
+            .host-remove { grid-column: 1 / -1; justify-content: flex-end; }
+            .host-actions { gap: 0.45rem; }
+            .host-actions .text-btn { flex: 1 1 calc(50% - 0.45rem); text-align: center; padding: 0.55rem 0.65rem; }
+            .derive-grid { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+            .derive-grid .field:nth-child(5) { grid-column: 1 / -1; }
+            .search-input { padding: 0.9rem 1rem 0.9rem 2.75rem; font-size: 16px; }
+            .stats { flex-direction: column; align-items: flex-start; }
+            .stats-right { width: 100%; justify-content: space-between; }
+            .table-wrapper { border-radius: 12px; overflow-x: visible; }
+            table { min-width: 0; }
+            thead { display: none; }
+            tbody tr {
+                display: block;
+                padding: 0.95rem 1rem;
+                border-bottom: 1px solid var(--border);
+            }
+            tbody tr:hover { background: transparent; }
+            tbody td {
+                display: flex; justify-content: space-between; align-items: baseline;
+                gap: 0.75rem; padding: 0.32rem 0; border-bottom: none;
+                text-align: right !important; font-size: 0.9rem;
+            }
+            tbody td::before {
+                content: attr(data-label);
+                color: var(--muted); font-size: 0.7rem; font-weight: 600;
+                text-transform: uppercase; letter-spacing: 0.05em; text-align: left;
+                flex-shrink: 0;
+            }
+            tbody td:first-child {
+                display: block; text-align: left !important;
+                padding-bottom: 0.55rem; margin-bottom: 0.35rem;
+                border-bottom: 1px solid var(--border);
+            }
+            tbody td:first-child::before { display: none; }
+            .model-link { word-break: break-all; font-size: 0.84rem; line-height: 1.35; }
+            .pager { flex-direction: column; align-items: stretch; }
+            .pager-controls { justify-content: space-between; }
+            .pager-btn { min-width: 2.6rem; height: 2.6rem; }
+            .host-row input, .host-row select, .field select, .field input[type="number"] { font-size: 16px; }
+        }
+        @media (max-width: 420px) {
+            .derive-grid { grid-template-columns: 1fr; }
+            .derive-grid .field:nth-child(5) { grid-column: auto; }
+            .host-actions .text-btn { flex: 1 1 100%; }
         }
     </style>
 </head>
@@ -848,9 +918,19 @@ __TABLE_ROWS__
                 const row = document.createElement('div');
                 row.className = 'host-row';
 
+                const wrapField = (label, className, el) => {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'host-field' + (className ? ' ' + className : '');
+                    const lab = document.createElement('label');
+                    lab.textContent = label;
+                    wrap.append(lab, el);
+                    return wrap;
+                };
+
                 const nameInput = document.createElement('input');
                 nameInput.type = 'text';
                 nameInput.placeholder = 'Host name';
+                nameInput.setAttribute('aria-label', 'Host name');
                 nameInput.value = host.name;
                 nameInput.addEventListener('input', () => {
                     state.hosts[index].name = nameInput.value;
@@ -860,6 +940,8 @@ __TABLE_ROWS__
                 const gbInput = document.createElement('input');
                 gbInput.type = 'number'; gbInput.min = '0'; gbInput.step = '1';
                 gbInput.placeholder = 'GB'; gbInput.value = host.gb;
+                gbInput.setAttribute('aria-label', 'RAM GB');
+                gbInput.inputMode = 'numeric';
                 gbInput.addEventListener('input', () => {
                     state.hosts[index].gb = Number(gbInput.value) || 0;
                     saveState(); updateDerivedReadouts(); applySearch(true);
@@ -869,6 +951,8 @@ __TABLE_ROWS__
                 usableInput.type = 'number'; usableInput.min = '0'; usableInput.step = '1';
                 usableInput.placeholder = 'auto';
                 usableInput.title = 'Override usable GB (e.g. raised iogpu.wired_limit_mb). Blank = auto (Apple 75%, else overhead %).';
+                usableInput.setAttribute('aria-label', 'Usable GB');
+                usableInput.inputMode = 'numeric';
                 usableInput.value = host.usable != null ? host.usable : '';
                 usableInput.addEventListener('input', () => {
                     const v = Number(usableInput.value);
@@ -877,6 +961,7 @@ __TABLE_ROWS__
                 });
 
                 const bwSelect = document.createElement('select');
+                bwSelect.setAttribute('aria-label', 'Mem bandwidth');
                 BW_PRESETS.forEach(p => {
                     const opt = document.createElement('option');
                     opt.value = String(p.gbps);
@@ -907,6 +992,7 @@ __TABLE_ROWS__
                 const removeBtn = document.createElement('button');
                 removeBtn.type = 'button'; removeBtn.className = 'icon-btn danger';
                 removeBtn.title = 'Remove host'; removeBtn.textContent = '×';
+                removeBtn.setAttribute('aria-label', 'Remove host');
                 removeBtn.disabled = state.hosts.length <= 1;
                 removeBtn.addEventListener('click', () => {
                     if (state.hosts.length <= 1) return;
@@ -914,7 +1000,17 @@ __TABLE_ROWS__
                     saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
                 });
 
-                row.append(nameInput, gbInput, usableInput, bwSelect, removeBtn);
+                const removeWrap = document.createElement('div');
+                removeWrap.className = 'host-remove';
+                removeWrap.appendChild(removeBtn);
+
+                row.append(
+                    wrapField('Name', 'host-field-name', nameInput),
+                    wrapField('RAM GB', '', gbInput),
+                    wrapField('Usable GB', '', usableInput),
+                    wrapField('Mem bandwidth', 'host-field-bw', bwSelect),
+                    removeWrap
+                );
                 hostsList.appendChild(row);
             });
         }
@@ -1163,12 +1259,12 @@ __TABLE_ROWS__
             if (rec.sizeB != null) tr.dataset.sizeB = String(rec.sizeB);
             if (rec.activeB != null) tr.dataset.activeB = String(rec.activeB);
             tr.innerHTML = `
-                <td><a class="model-link" href="https://huggingface.co/${rec.id}" target="_blank" rel="noopener">${rec.id}</a></td>
-                <td style="text-align: right;"><span class="size-text">${formatSizeLabel(rec.sizeB)}</span></td>
-                <td style="text-align: right;"><span class="fit-text">—</span></td>
-                <td style="text-align: right;"><span class="tps-text">—</span></td>
-                <td style="text-align: right;"><span class="badge-downloads ${high}">${(rec.downloads || 0).toLocaleString()}</span></td>
-                <td style="text-align: right;"><span class="date-text">${rec.date || ''}</span></td>
+                <td data-label="Model"><a class="model-link" href="https://huggingface.co/${rec.id}" target="_blank" rel="noopener">${rec.id}</a></td>
+                <td data-label="Size" style="text-align: right;"><span class="size-text">${formatSizeLabel(rec.sizeB)}</span></td>
+                <td data-label="Fit" style="text-align: right;"><span class="fit-text">—</span></td>
+                <td data-label="Est. tok/s" style="text-align: right;"><span class="tps-text">—</span></td>
+                <td data-label="Downloads" style="text-align: right;"><span class="badge-downloads ${high}">${(rec.downloads || 0).toLocaleString()}</span></td>
+                <td data-label="Last Modified" style="text-align: right;"><span class="date-text">${rec.date || ''}</span></td>
             `;
             return tr;
         }
