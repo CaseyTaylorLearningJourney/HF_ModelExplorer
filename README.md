@@ -4,7 +4,7 @@ Cluster-aware Hugging Face model finder for **GGUF** and **MLX**.
 
 HF’s hardware picker assumes a single machine. This tool maps multi-host RAM, memory bandwidth, and interconnect to models that fit, with theoretical decode tok/s.
 
-**Live demo:** _(add URL after first publish)_
+**Live demo:** https://caseytaylorlearningjourney.github.io/HF_ModelExplorer/
 
 ## What you dial in
 
