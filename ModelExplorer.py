@@ -498,6 +498,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             border: 1px solid var(--border); border-radius: 8px; color: var(--text);
             font: inherit; font-size: 0.85rem;
         }
+        .mobile-sort {
+            display: none; align-items: end; gap: 0.55rem; margin-bottom: 0.85rem;
+        }
+        .mobile-sort-field { flex: 1; min-width: 0; }
+        .mobile-sort-field label {
+            display: block; font-size: 0.72rem; color: var(--muted); margin-bottom: 0.3rem;
+            font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .mobile-sort-field select {
+            width: 100%; padding: 0.55rem 0.75rem; background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+            font: inherit; font-size: 16px;
+        }
+        .mobile-sort-field select:focus {
+            outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        #sortDirBtn {
+            min-width: 2.6rem; height: 2.6rem; font-size: 0.95rem; flex-shrink: 0;
+        }
         @media (max-width: 900px) {
             .host-row, .hosts-header { grid-template-columns: 1fr 80px 88px 148px 36px; }
         }
@@ -529,6 +548,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             .search-input { padding: 0.9rem 1rem 0.9rem 2.75rem; font-size: 16px; }
             .stats { flex-direction: column; align-items: flex-start; }
             .stats-right { width: 100%; justify-content: space-between; }
+            .mobile-sort { display: flex; }
             .table-wrapper { border-radius: 12px; overflow-x: visible; }
             table { min-width: 0; }
             thead { display: none; }
@@ -704,6 +724,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 </button>
             </div>
         </div>
+        <div class="mobile-sort" id="mobileSort">
+            <div class="mobile-sort-field">
+                <label for="sortSelect">Sort by</label>
+                <select id="sortSelect" aria-label="Sort results by">
+                    <option value="4" selected>Downloads</option>
+                    <option value="1">Size</option>
+                    <option value="3">Est. tok/s</option>
+                    <option value="2">Fit</option>
+                    <option value="0">Model ID</option>
+                    <option value="5">Last Modified</option>
+                </select>
+            </div>
+            <button type="button" class="pager-btn" id="sortDirBtn" aria-label="Toggle sort direction" title="Toggle ascending / descending">▼</button>
+        </div>
 
         <div class="table-wrapper">
             <table id="modelsTable">
@@ -840,6 +874,8 @@ __TABLE_ROWS__
         const pagePrev = document.getElementById('pagePrev');
         const pageNext = document.getElementById('pageNext');
         const pageMeta = document.getElementById('pageMeta');
+        const sortSelect = document.getElementById('sortSelect');
+        const sortDirBtn = document.getElementById('sortDirBtn');
 
         const PAGE_SIZE_OPTIONS = [50, 100, 150];
         let state = {
@@ -1209,35 +1245,51 @@ __TABLE_ROWS__
             updateBoundReadout();
         }
 
-        function sortTable(columnIndex) {
-            const rowsArray = getRows();
-            if (currentSortColumn === columnIndex) isAscending = !isAscending;
-            else { currentSortColumn = columnIndex; isAscending = columnIndex === 0; }
+        function updateSortUI() {
             for (let i = 0; i < 6; i++) {
                 const arrow = document.getElementById('arrow' + i);
-                if (arrow) arrow.textContent = i === columnIndex ? (isAscending ? ' ▲' : ' ▼') : '';
+                if (arrow) arrow.textContent = i === currentSortColumn ? (isAscending ? ' ▲' : ' ▼') : '';
             }
+            if (sortSelect) sortSelect.value = String(currentSortColumn);
+            if (sortDirBtn) {
+                sortDirBtn.textContent = isAscending ? '▲' : '▼';
+                sortDirBtn.setAttribute('aria-label', isAscending ? 'Sort ascending (tap for descending)' : 'Sort descending (tap for ascending)');
+            }
+        }
+
+        function sortTable(columnIndex, forceAscending) {
+            if (forceAscending !== undefined) {
+                currentSortColumn = columnIndex;
+                isAscending = !!forceAscending;
+            } else if (currentSortColumn === columnIndex) {
+                isAscending = !isAscending;
+            } else {
+                currentSortColumn = columnIndex;
+                isAscending = columnIndex === 0;
+            }
+            updateSortUI();
+            const rowsArray = getRows();
             rowsArray.sort((a, b) => {
-                if (columnIndex === 0) {
+                if (currentSortColumn === 0) {
                     return isAscending
                         ? a.dataset.modelId.localeCompare(b.dataset.modelId)
                         : b.dataset.modelId.localeCompare(a.dataset.modelId);
                 }
-                if (columnIndex === 1) {
+                if (currentSortColumn === 1) {
                     const na = rowSizeB(a) ?? -1, nb = rowSizeB(b) ?? -1;
                     return isAscending ? na - nb : nb - na;
                 }
-                if (columnIndex === 2) {
+                if (currentSortColumn === 2) {
                     const na = fitVerdict(rowSizeB(a)).rank, nb = fitVerdict(rowSizeB(b)).rank;
                     return isAscending ? na - nb : nb - na;
                 }
-                if (columnIndex === 3) {
+                if (currentSortColumn === 3) {
                     const ea = estimateTokS(rowSizeB(a), rowActiveB(a));
                     const eb = estimateTokS(rowSizeB(b), rowActiveB(b));
                     const na = ea ? ea.tps : -1, nb = eb ? eb.tps : -1;
                     return isAscending ? na - nb : nb - na;
                 }
-                if (columnIndex === 4) {
+                if (currentSortColumn === 4) {
                     const na = parseInt(a.querySelector('.badge-downloads').textContent.replace(/,/g, ''), 10) || 0;
                     const nb = parseInt(b.querySelector('.badge-downloads').textContent.replace(/,/g, ''), 10) || 0;
                     return isAscending ? na - nb : nb - na;
@@ -1341,10 +1393,7 @@ __TABLE_ROWS__
             tableBody.innerHTML = '';
             sorted.forEach(rec => tableBody.appendChild(buildRow(rec)));
             currentSortColumn = 4; isAscending = false;
-            for (let i = 0; i < 6; i++) {
-                const arrow = document.getElementById('arrow' + i);
-                if (arrow) arrow.textContent = i === 4 ? ' ▼' : '';
-            }
+            updateSortUI();
             applySearch(true);
         }
 
@@ -1420,6 +1469,11 @@ __TABLE_ROWS__
             saveState(); renderHosts(); updateDerivedReadouts(); applySearch(true);
         });
         searchInput.addEventListener('input', () => applySearch(true));
+        sortSelect.addEventListener('change', () => {
+            const col = Number(sortSelect.value);
+            sortTable(col, col === 0);
+        });
+        sortDirBtn.addEventListener('click', () => sortTable(currentSortColumn));
         pageSizeSelect.addEventListener('change', () => {
             state.pageSize = Number(pageSizeSelect.value) || 50;
             state.page = 1;
@@ -1448,6 +1502,7 @@ __TABLE_ROWS__
         setFormat(state.format);
         renderHosts();
         updateDerivedReadouts();
+        updateSortUI();
         applySearch();
     </script>
 </body>
