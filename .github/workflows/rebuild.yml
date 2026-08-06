@@ -1,4 +1,12 @@
-name: Rebuild and Deploy
+name: Sync
+
+# Scheduled runs reuse the latest commit on main (they don't create a new
+# push), so without run-name GitHub keeps labeling every deploy with that
+# last commit message. Make the Actions title reflect the sync instead.
+run-name: >-
+  ${{ github.event_name == 'schedule' && 'Sync Hugging Face data'
+      || github.event_name == 'workflow_dispatch' && 'Manual sync'
+      || 'Deploy from push' }}
 
 on:
   push:
@@ -33,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Rebuild site + snapshots
+      - name: Sync site + snapshots
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python ModelExplorer.py
